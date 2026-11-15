@@ -241,7 +241,6 @@ async def test_no_cached_session_returns_error_not_crash(monkeypatch, tmp_path):
 async def test_unofficial_tools_dispatch_correctly(fake_unofficial):
     for tool, method in [
         ("get_respiration", "get_respiration_data"),
-        ("get_stress_details", "get_stress_data"),
         ("get_training_status", "get_training_status"),
         ("get_training_readiness", "get_training_readiness"),
         ("get_max_metrics", "get_max_metrics"),
@@ -423,3 +422,28 @@ async def test_all_tools_are_registered():
     # 23 official + 11 unofficial-fallback (read-only) + 9 workout tools.
     assert len(tools) == 44
 
+
+
+def test_compact_stress_one_value_per_slot():
+    from garmin_mcp.tools_unofficial import compact_stress
+
+    raw = {
+        "calendarDate": "2026-11-15",
+        "startTimestampGMT": "2026-11-14T23:00:00.0",
+        "startTimestampLocal": "2026-11-15T00:00:00.0",
+        "avgStressLevel": 22,
+        "maxStressLevel": 97,
+        "stressValuesArray": [[1794697200000, 17], [1794697380000, -1], [1794697740000, 40]],
+        "bodyBatteryValuesArray": [[1794697200000, "MEASURED", 42, 3.0]],
+    }
+    out = compact_stress(raw)
+    assert out["values"] == [17, -1, None, 40]
+    assert out["slotMinutes"] == 3
+    assert "bodyBatteryValuesArray" not in out
+
+
+@pytest.mark.asyncio
+async def test_get_stress_details_dispatch(fake_unofficial):
+    out = await _call("get_stress_details", compact=False)
+    assert out["method"] == "get_stress_data"
+    assert out["args"] == [TODAY]

@@ -32,6 +32,50 @@ def _today() -> str:
     return date.today().isoformat()
 
 
+STRESS_SLOT_MS = 3 * 60 * 1000
+
+
+def compact_stress(raw: dict[str, Any]) -> dict[str, Any]:
+    """Shrink Garmin's dailyStress answer to one value per 3-minute slot."""
+    start = raw.get("startTimestampGMT")
+    pairs = [p for p in (raw.get("stressValuesArray") or []) if isinstance(p, (list, tuple)) and len(p) >= 2]
+    base = None
+    if start:
+        try:
+            from datetime import datetime, timezone
+
+            base = int(
+                datetime.strptime(str(start).split(".")[0], "%Y-%m-%dT%H:%M:%S")
+                .replace(tzinfo=timezone.utc)
+                .timestamp()
+                * 1000
+            )
+        except ValueError:
+            base = None
+    if base is None and pairs:
+        base = int(pairs[0][0])
+    values: list[int | None] = []
+    for ts, value in pairs:
+        if ts is None or base is None:
+            continue
+        slot = round((int(ts) - base) / STRESS_SLOT_MS)
+        if slot < 0:
+            continue
+        while len(values) <= slot:
+            values.append(None)
+        values[slot] = None if value is None else int(value)
+    return {
+        "calendarDate": raw.get("calendarDate"),
+        "startTimestampGMT": raw.get("startTimestampGMT"),
+        "startTimestampLocal": raw.get("startTimestampLocal"),
+        "endTimestampLocal": raw.get("endTimestampLocal"),
+        "slotMinutes": 3,
+        "avgStressLevel": raw.get("avgStressLevel"),
+        "maxStressLevel": raw.get("maxStressLevel"),
+        "values": values,
+    }
+
+
 def build_unofficial_tools(get_client: Callable[[], Any]) -> list[Callable[..., Any]]:
     """Return the 12 unofficial-fallback tool callables, bound to `get_client`.
 
@@ -63,19 +107,28 @@ def build_unofficial_tools(get_client: Callable[[], Any]) -> list[Callable[..., 
         """
         return await _call_unofficial(lambda c: c.get_respiration_data(day or _today()))
 
-    async def get_stress_details(day: str | None = None) -> Any:
+    async def get_stress_details(day: str | None = None, compact: bool = True) -> Any:
         """(unofficial API) Get intraday stress readings for one day (about every 3 minutes).
 
         Garmin's official Personal API only returns daily stress totals
         (see get_stress), so this uses the unofficial garminconnect
-        library. ``stressValuesArray`` holds [timestamp_ms_utc, value]
-        pairs, value 0-100; -1 means not enough data (e.g. moving), -2
-        means activity. Read-only.
+        library. Read-only.
+
+        With compact=True (default) the answer is small: ``values`` is one
+        entry per 3-minute slot from ``startTimestampLocal`` (slot i starts
+        i*3 minutes later), value 0-100, -1 = not enough data (e.g.
+        moving), -2 = activity, null = no reading. With compact=False you
+        get Garmin's full answer, including ``stressValuesArray`` as
+        [timestamp_ms_utc, value] pairs and the Body Battery timeline.
 
         Args:
             day: ISO date "YYYY-MM-DD". Defaults to today.
+            compact: Return the small slot list instead of Garmin's full answer.
         """
-        return await _call_unofficial(lambda c: c.get_stress_data(day or _today()))
+        raw = await _call_unofficial(lambda c: c.get_stress_data(day or _today()))
+        if not compact or not isinstance(raw, dict) or "error" in raw:
+            return raw
+        return compact_stress(raw)
 
     async def get_training_status(day: str | None = None) -> Any:
         """(unofficial API) Get Garmin's training status assessment (e.g. productive, overreaching) for one day.
