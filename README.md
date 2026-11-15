@@ -282,6 +282,24 @@ If you do want it:
    without needing your password again. Treat that token like a
    password too: whoever has it can read your Garmin data.
 
+### Staying logged in across restarts (optional)
+
+By default both logins live in memory: after a restart or redeploy you
+reconnect the connector in claude.ai and revisit `/admin/garmin-login`.
+To avoid that, give the server a persistent volume:
+
+1. In Railway, attach a volume to the service (e.g. mount path `/data`).
+2. Set `GARMIN_MCP_STATE_DIR=/data`.
+
+The server then keeps `oauth_state.json` (registered clients and the
+tokens it issued, so claude.ai stays connected) and `garmin_tokens.json`
+(the unofficial session, rewritten by the library on every token
+refresh, so unlike `GARMIN_UNOFFICIAL_SESSION` it doesn't go stale) in
+that directory, both mode 0600. Your Garmin password is never written.
+Anyone who can read the volume can use the connector and read your
+Garmin data, so keep it attached to this service only. Delete the files
+(or the volume) to force a fresh login.
+
 ## Testing without touching your real Garmin account
 
 ```bash

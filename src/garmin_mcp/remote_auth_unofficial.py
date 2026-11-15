@@ -48,7 +48,10 @@ from mcp.server.mcpserver import MCPServer
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 
+from . import state_store
 from .remote_auth import SingleUserOAuthProvider
+
+GARMIN_TOKENS_FILE = "garmin_tokens.json"
 
 #: How long a pending MFA challenge stays valid before it's discarded.
 MFA_PENDING_TTL_SECONDS = 5 * 60
@@ -188,6 +191,40 @@ def _set_client(client: Garmin) -> None:
     global _client
     with _lock:
         _client = client
+    _persist_session(client)
+
+
+def _persist_session(client: Garmin) -> None:
+    """If GARMIN_MCP_STATE_DIR is set, save the session tokens there.
+
+    Also points the library's own token store at that file, so every later
+    token refresh rewrites it and the saved session never goes stale.
+    """
+    path = state_store.state_file(GARMIN_TOKENS_FILE)
+    if path is None:
+        return
+    try:
+        client.client.dump(str(path))
+        client.client._tokenstore_path = str(path)
+    except Exception:  # noqa: BLE001 - persistence is best-effort
+        pass
+
+
+def resume_from_state_dir() -> bool:
+    """On startup, try to resume a session saved in GARMIN_MCP_STATE_DIR.
+
+    Returns True if a session was restored. Never raises.
+    """
+    path = state_store.state_file(GARMIN_TOKENS_FILE)
+    if path is None or not path.exists():
+        return False
+    client = Garmin()
+    try:
+        client.login(tokenstore=str(path))
+    except Exception:  # noqa: BLE001 - stale/invalid session; fall back to the login page
+        return False
+    _set_client(client)
+    return True
 
 
 def _gc_pending_mfa() -> None:
@@ -280,7 +317,12 @@ def _success_page() -> str:
     except GarminAuthError:
         dump = ""
     optional = ""
-    if dump:
+    if state_store.state_dir() is not None:
+        optional = """
+        <p class="sub">Saved to this server's state directory, so it survives
+        restarts and redeploys. Nothing else to do.</p>
+        """
+    elif dump:
         optional = f"""
         <hr>
         <p class="sub">Optional: to skip this page after the next restart, save

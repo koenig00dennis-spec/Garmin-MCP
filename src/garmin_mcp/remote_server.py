@@ -61,7 +61,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
 
-from . import remote_auth_unofficial
+from . import remote_auth_unofficial, state_store
 from .remote_auth import SingleUserOAuthProvider, build_login_routes
 from .remote_auth_unofficial import build_garmin_login_routes
 from .tools_official import OFFICIAL_TOOLS
@@ -96,7 +96,11 @@ def build_server() -> tuple[MCPServer, TransportSecuritySettings]:
         "your Garmin Personal API key (Garmin Connect website -> Settings -> Personal API Key)",
     )
 
-    provider = SingleUserOAuthProvider(access_password=access_password, resource_url=public_url)
+    provider = SingleUserOAuthProvider(
+        access_password=access_password,
+        resource_url=public_url,
+        state_path=state_store.state_file("oauth_state.json"),
+    )
 
     host = urlparse(public_url).netloc  # includes port, if any
 
@@ -144,7 +148,9 @@ def build_server() -> tuple[MCPServer, TransportSecuritySettings]:
     # the owner opted into persisting one (see GARMIN_UNOFFICIAL_SESSION in
     # the module docstring above). A missing or stale value is silently a
     # no-op — the tools just report no session until the owner logs in.
-    remote_auth_unofficial.resume_from_env()
+    # GARMIN_MCP_STATE_DIR (a persistent volume) wins over the env var: the
+    # file there is kept current on every token refresh.
+    remote_auth_unofficial.resume_from_state_dir() or remote_auth_unofficial.resume_from_env()
 
     build_login_routes(mcp, provider)
     build_garmin_login_routes(mcp, provider)

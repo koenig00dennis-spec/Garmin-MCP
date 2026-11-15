@@ -13,6 +13,7 @@ Run with: pytest
 from __future__ import annotations
 
 import base64
+import pathlib
 import hashlib
 import secrets
 from types import SimpleNamespace
@@ -35,6 +36,7 @@ def remote_env(monkeypatch):
     monkeypatch.setenv("GARMIN_MCP_ACCESS_PASSWORD", PASSWORD)
     monkeypatch.setenv("GARMIN_PERSONAL_API_KEY", "dummy-key-for-tests")
     monkeypatch.delenv("GARMIN_UNOFFICIAL_SESSION", raising=False)
+    monkeypatch.delenv("GARMIN_MCP_STATE_DIR", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -603,3 +605,110 @@ def test_spoofed_host_header_is_rejected(client):
 def test_health_and_metadata_endpoints(client):
     assert client.get("/health").status_code == 200
     assert client.get("/.well-known/oauth-authorization-server").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# Optional persistence (GARMIN_MCP_STATE_DIR)
+# --------------------------------------------------------------------------
+
+
+_INIT_BODY = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "pytest", "version": "0"}},
+}
+_MCP_HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+
+
+def _fresh_client() -> TestClient:
+    mcp, transport_security = build_server()
+    app = mcp.streamable_http_app(transport_security=transport_security, streamable_http_path="/")
+    return TestClient(app, base_url=PUBLIC_URL)
+
+
+def test_state_dir_keeps_connector_logged_in_across_restart(remote_env, monkeypatch, tmp_path):
+    state = tmp_path / "state"
+    monkeypatch.setenv("GARMIN_MCP_STATE_DIR", str(state))
+
+    with _fresh_client() as before:
+        tokens = _full_login(before)
+
+    state_file = state / "oauth_state.json"
+    assert state_file.exists()
+    assert state_file.stat().st_mode & 0o777 == 0o600
+
+    # A brand-new server process (same volume) still honours the old tokens.
+    with _fresh_client() as after:
+        call = after.post(
+            "/", json=_INIT_BODY, headers={**_MCP_HEADERS, "Authorization": f"Bearer {tokens['access_token']}"}
+        )
+        assert call.status_code == 200
+        refreshed = after.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["refresh_token"],
+                "client_id": tokens["client_id"],
+                "client_secret": tokens["client_secret"],
+            },
+        )
+        assert refreshed.status_code == 200
+
+
+def test_without_state_dir_restart_forgets_tokens(remote_env):
+    with _fresh_client() as before:
+        tokens = _full_login(before)
+    with _fresh_client() as after:
+        call = after.post(
+            "/", json=_INIT_BODY, headers={**_MCP_HEADERS, "Authorization": f"Bearer {tokens['access_token']}"}
+        )
+        assert call.status_code == 401
+
+
+def test_corrupt_state_file_is_ignored(remote_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("GARMIN_MCP_STATE_DIR", str(tmp_path))
+    (tmp_path / "oauth_state.json").write_text("{not json")
+    with _fresh_client() as c:
+        assert c.get("/health").text == "ok"
+
+
+class _FakeGarminWithTokenFile(_FakeGarminNoMFA):
+    """Fake whose session can be dumped to / resumed from a token file."""
+
+    def __init__(self, email: str | None = None, password: str | None = None, **_kwargs: object) -> None:
+        super().__init__(email, password)
+
+        def dump(path: str) -> None:
+            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+            pathlib.Path(path).write_text('{"di_token": "fake"}')
+
+        self.client = SimpleNamespace(dumps=lambda: '{"di_token": "fake"}', dump=dump, _tokenstore_path=None)
+
+    def login(self, tokenstore: str | None = None) -> tuple[None, None]:
+        if tokenstore is not None and not pathlib.Path(tokenstore).exists():
+            raise RuntimeError("no saved session")
+        return None, None
+
+
+def test_state_dir_keeps_garmin_session_across_restart(monkeypatch, tmp_path):
+    monkeypatch.setenv("GARMIN_MCP_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(remote_auth_unofficial, "Garmin", _FakeGarminWithTokenFile)
+
+    status, _ = remote_auth_unofficial.start_login("me@example.com", "pw")
+    assert status == "ok"
+    token_file = tmp_path / "garmin_tokens.json"
+    assert token_file.exists()
+    # Later refreshes are written back to the same file by the library.
+    assert remote_auth_unofficial.get_client().client._tokenstore_path == str(token_file)
+
+    remote_auth_unofficial.reset_session()  # simulate a restart
+    assert remote_auth_unofficial.resume_from_state_dir() is True
+    assert remote_auth_unofficial.has_session()
+
+
+def test_resume_from_state_dir_without_file_is_a_noop(monkeypatch, tmp_path):
+    monkeypatch.setenv("GARMIN_MCP_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(remote_auth_unofficial, "Garmin", _FakeGarminWithTokenFile)
+    assert remote_auth_unofficial.resume_from_state_dir() is False
+    assert not remote_auth_unofficial.has_session()

@@ -20,11 +20,12 @@ How it fits together:
   authorization code, which the client then exchanges for a bearer access
   token (and refresh token) at /token.
 
-Everything is held in memory (clients, pending logins, codes, tokens). On
-a Railway restart/redeploy, every connected client has to redo the OAuth
-dance once (claude.ai does this transparently) — there's no durable "token
-database" to keep in sync, which is the right trade for a single-user
-personal server.
+By default everything is held in memory (clients, pending logins, codes,
+tokens), so on a Railway restart/redeploy every connected client has to
+redo the OAuth dance once. Set ``GARMIN_MCP_STATE_DIR`` (see
+``state_store.py``) to keep registered clients and issued tokens on a
+persistent volume instead, so claude.ai stays connected across restarts.
+Short-lived pending logins and authorization codes stay in memory only.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from html import escape as _esc
+from pathlib import Path
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -47,6 +49,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
+
+from . import state_store
 
 AUTH_CODE_TTL_SECONDS = 5 * 60
 ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days; refreshed well before Garmin's own key expires
@@ -67,7 +71,7 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
     token this issues is "you", because only you know the password.
     """
 
-    def __init__(self, access_password: str, resource_url: str) -> None:
+    def __init__(self, access_password: str, resource_url: str, state_path: Path | None = None) -> None:
         self._access_password = access_password
         # This server only ever serves one RFC 8707 resource — itself — so every
         # token it mints is stamped with that resource regardless of what a client
@@ -78,6 +82,8 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
         self.auth_codes: dict[str, AuthorizationCode] = {}
         self.access_tokens: dict[str, AccessToken] = {}
         self.refresh_tokens: dict[str, RefreshToken] = {}
+        self._state_path = state_path
+        self._load_state()
 
     def check_password(self, candidate: str) -> bool:
         return hmac.compare_digest(candidate.encode(), self._access_password.encode())
@@ -89,6 +95,7 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         self.clients[client_info.client_id] = client_info
+        self._save_state()
 
     # -- Authorization code flow -------------------------------------------
 
@@ -178,6 +185,7 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
             self.access_tokens.pop(token.token, None)
         else:
             self.refresh_tokens.pop(token.token, None)
+        self._save_state()
 
     # -- helpers --------------------------------------------------------------
 
@@ -193,6 +201,7 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
             resource=self._resource_url,
         )
         self.refresh_tokens[refresh_token] = RefreshToken(token=refresh_token, client_id=client_id, scopes=scopes)
+        self._save_state()
         return OAuthToken(
             access_token=access_token,
             token_type="Bearer",
@@ -200,6 +209,48 @@ class SingleUserOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode
             refresh_token=refresh_token,
             scope=" ".join(scopes) if scopes else None,
         )
+
+    def _save_state(self) -> None:
+        """Best-effort write of clients and tokens to the state file, if configured."""
+        if self._state_path is None:
+            return
+        now = time.time()
+        data = {
+            "clients": [c.model_dump(mode="json") for c in self.clients.values()],
+            "access_tokens": [
+                t.model_dump(mode="json")
+                for t in self.access_tokens.values()
+                if t.expires_at is None or t.expires_at > now
+            ],
+            "refresh_tokens": [t.model_dump(mode="json") for t in self.refresh_tokens.values()],
+        }
+        try:
+            state_store.write_json(self._state_path, data)
+        except OSError:
+            pass  # persistence is a convenience; never break a login over it
+
+    def _load_state(self) -> None:
+        if self._state_path is None:
+            return
+        data = state_store.read_json(self._state_path)
+        if not isinstance(data, dict):
+            return
+        try:
+            for raw in data.get("clients", []):
+                client = OAuthClientInformationFull.model_validate(raw)
+                self.clients[client.client_id] = client
+            now = time.time()
+            for raw in data.get("access_tokens", []):
+                token = AccessToken.model_validate(raw)
+                if token.expires_at is None or token.expires_at > now:
+                    self.access_tokens[token.token] = token
+            for raw in data.get("refresh_tokens", []):
+                token = RefreshToken.model_validate(raw)
+                self.refresh_tokens[token.token] = token
+        except Exception:  # noqa: BLE001 - a corrupt file just means reconnecting once
+            self.clients.clear()
+            self.access_tokens.clear()
+            self.refresh_tokens.clear()
 
     def _gc_pending_logins(self) -> None:
         cutoff = time.time() - PENDING_LOGIN_TTL_SECONDS
