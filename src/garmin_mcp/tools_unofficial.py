@@ -1,7 +1,7 @@
 """Tool implementations backed by the unofficial garminconnect library.
 
 Built as a factory, `build_unofficial_tools(get_client)`, rather than a
-fixed set of module-level functions, so the *same* 11 tool definitions can
+fixed set of module-level functions, so the *same* 12 tool definitions can
 be wired to either of two very different session sources:
 
 - The local hybrid server (``server.py``) wires them to
@@ -33,7 +33,7 @@ def _today() -> str:
 
 
 def build_unofficial_tools(get_client: Callable[[], Any]) -> list[Callable[..., Any]]:
-    """Return the 11 unofficial-fallback tool callables, bound to `get_client`.
+    """Return the 12 unofficial-fallback tool callables, bound to `get_client`.
 
     `get_client()` must return a logged-in `garminconnect.Garmin` instance,
     or raise so its exception's `str()` becomes the `{"error": ...}` message
@@ -62,6 +62,20 @@ def build_unofficial_tools(get_client: Callable[[], Any]) -> list[Callable[..., 
             day: ISO date "YYYY-MM-DD". Defaults to today.
         """
         return await _call_unofficial(lambda c: c.get_respiration_data(day or _today()))
+
+    async def get_stress_details(day: str | None = None) -> Any:
+        """(unofficial API) Get intraday stress readings for one day (about every 3 minutes).
+
+        Garmin's official Personal API only returns daily stress totals
+        (see get_stress), so this uses the unofficial garminconnect
+        library. ``stressValuesArray`` holds [timestamp_ms_utc, value]
+        pairs, value 0-100; -1 means not enough data (e.g. moving), -2
+        means activity. Read-only.
+
+        Args:
+            day: ISO date "YYYY-MM-DD". Defaults to today.
+        """
+        return await _call_unofficial(lambda c: c.get_stress_data(day or _today()))
 
     async def get_training_status(day: str | None = None) -> Any:
         """(unofficial API) Get Garmin's training status assessment (e.g. productive, overreaching) for one day.
@@ -166,6 +180,7 @@ def build_unofficial_tools(get_client: Callable[[], Any]) -> list[Callable[..., 
 
     return [
         get_respiration,
+        get_stress_details,
         get_training_status,
         get_training_readiness,
         get_max_metrics,

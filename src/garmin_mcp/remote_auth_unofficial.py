@@ -3,7 +3,7 @@ owner-only /admin/garmin-login page that establishes it.
 
 Why this exists: the remote server is deliberately official-API-only by
 default (see remote_server.py) specifically so your Garmin password never
-has to live anywhere but your own machine. If you've decided the 11
+has to live anywhere but your own machine. If you've decided the 12
 unofficial-fallback tools (training status/readiness, VO2 max, race
 predictions, personal records, devices, activity splits/laps/weather/
 gear, respiration) are worth that trade-off, this module is the
@@ -240,7 +240,7 @@ def _credentials_form(*, error: str | None = None) -> str:
     return _page(f"""
     <h1>Connect your Garmin account</h1>
     <p class="sub">This logs this server in to Garmin's unofficial API so it can
-    serve the 11 unofficial-fallback tools. Your Garmin password is sent straight
+    serve the 12 unofficial-fallback tools. Your Garmin password is sent straight
     to this server and is never stored — only the resulting session is kept, in
     memory. See remote_auth_unofficial.py for the full trade-offs.</p>
     {error_html}

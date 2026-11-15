@@ -192,7 +192,7 @@ async def test_remote_server_registers_official_and_unofficial_tools(app):
     mcp, _starlette_app = app
     tools = await mcp.list_tools()
     names = {t.name for t in tools}
-    # 23 official + 11 unofficial-fallback (read-only) + 9 workout tools
+    # 23 official + 12 unofficial-fallback (read-only) + 9 workout tools
     # (create/list/get/delete/schedule/push) — all of the unofficial ones
     # are always *registered* on the remote server now, they just error
     # out until the owner logs in at /admin/garmin-login (see the tests

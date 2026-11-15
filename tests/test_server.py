@@ -241,6 +241,7 @@ async def test_no_cached_session_returns_error_not_crash(monkeypatch, tmp_path):
 async def test_unofficial_tools_dispatch_correctly(fake_unofficial):
     for tool, method in [
         ("get_respiration", "get_respiration_data"),
+        ("get_stress_details", "get_stress_data"),
         ("get_training_status", "get_training_status"),
         ("get_training_readiness", "get_training_readiness"),
         ("get_max_metrics", "get_max_metrics"),
@@ -280,6 +281,7 @@ async def test_unofficial_docstrings_are_labeled():
     tools = await server.mcp.list_tools()
     unofficial_names = {
         "get_respiration",
+        "get_stress_details",
         "get_training_status",
         "get_training_readiness",
         "get_max_metrics",
@@ -421,15 +423,3 @@ async def test_all_tools_are_registered():
     # 23 official + 11 unofficial-fallback (read-only) + 9 workout tools.
     assert len(tools) == 44
 
-
-@pytest.mark.asyncio
-async def test_get_stress_details_calls_intraday_endpoint(fake_official):
-    result = await _call("get_stress_details", day="2026-11-15")
-    assert fake_official.calls == [("get", ("/wellness-service/wellness/dailyStress/2026-11-15",), {})]
-    assert result["ok"] is True
-
-
-@pytest.mark.asyncio
-async def test_get_stress_details_defaults_to_today(fake_official):
-    await _call("get_stress_details")
-    assert fake_official.calls[0][1] == (f"/wellness-service/wellness/dailyStress/{date.today().isoformat()}",)

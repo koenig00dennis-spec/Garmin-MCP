@@ -22,15 +22,15 @@ want — if you never call an unofficial-API tool, you never need to run
 
 ## What this gives Claude
 
-**24 tools on the official Personal API** — no password, ever:
+**23 tools on the official Personal API** — no password, ever:
 
 | Area | Tools |
 |---|---|
 | **Activities & workouts** | `list_activities`, `get_activity`, `get_activity_workouts`, `get_wellness_activity_summaries` |
-| **Health & wellness** | `get_daily_summary`, `get_sleep`, `get_sleep_summaries`, `get_steps`, `get_heart_rate`, `get_heart_rate_zones`, `get_body_battery`, `get_stress`, `get_stress_details`, `get_hrv`, `get_hrv_summaries`, `get_spo2`, `get_fitness_age`, `get_hydration`, `get_weight_measurements`, `get_weight_goals`, `get_food_logs`, `get_profile_settings` |
+| **Health & wellness** | `get_daily_summary`, `get_sleep`, `get_sleep_summaries`, `get_steps`, `get_heart_rate`, `get_heart_rate_zones`, `get_body_battery`, `get_stress`, `get_hrv`, `get_hrv_summaries`, `get_spo2`, `get_fitness_age`, `get_hydration`, `get_weight_measurements`, `get_weight_goals`, `get_food_logs`, `get_profile_settings` |
 | **Women's health** | `get_menstrual_cycle_summary`, `get_menstrual_cycle_day_view` |
 
-**11 read-only tools on the unofficial fallback** — data Garmin's
+**12 read-only tools on the unofficial fallback** — data Garmin's
 Personal API doesn't cover yet, each clearly labeled `(unofficial API)`
 in its description:
 
@@ -38,7 +38,7 @@ in its description:
 |---|---|
 | **Training metrics** | `get_training_status`, `get_training_readiness`, `get_max_metrics` (VO2 max), `get_race_predictions` |
 | **Activities & workouts** | `get_personal_records`, `list_devices`, `get_activity_splits`, `get_activity_laps`, `get_activity_weather`, `get_activity_gear` |
-| **Health & wellness** | `get_respiration` |
+| **Health & wellness** | `get_respiration`, `get_stress_details` (intraday stress, ~3 min) |
 
 **9 workout tools, also on the unofficial fallback** — these *write* to
 your account (create, schedule, push, or delete a structured workout), so
@@ -62,7 +62,7 @@ scheduling, and device push today.
 
 ## ⚠️ About the unofficial fallback and workout tools
 
-The 20 tools above (11 read-only + 9 workout) are outside Garmin's terms
+The 21 tools above (12 read-only + 9 workout) are outside Garmin's terms
 of service, even the read-only ones — Garmin hasn't exposed this data via
 an official API yet. In practice this is widely used and low-risk, but
 not zero-risk. They use
@@ -98,7 +98,7 @@ they need it, instead of failing silently.
 | Transport | stdio | HTTP (Streamable HTTP) |
 | Where it runs | your own machine | anywhere public (Railway, etc.) |
 | Reachable from | Claude Desktop/Cursor on that machine only | claude.ai on **any device**, including your phone |
-| Tools | all 44 (24 official + 11 unofficial + 9 workout) | 24 official always; the 20 unofficial/workout tools are *registered* but only work once you opt in at `/admin/garmin-login` |
+| Tools | all 44 (23 official + 12 unofficial + 9 workout) | 23 official always; the 21 unofficial/workout tools are *registered* but only work once you opt in at `/admin/garmin-login` |
 | Your Garmin password | only touches `garmin-mcp-auth`, run by hand | **never** — typed into `/admin/garmin-login` directly, never into Claude or an env var |
 | Access control | whoever has your machine | OAuth2 + a password you set (`GARMIN_MCP_ACCESS_PASSWORD`) |
 
@@ -106,7 +106,7 @@ Use the local server if you only ever use Claude Desktop/Cursor on one
 machine and want every tool with the least setup — the unofficial and
 workout tools work as soon as you run `garmin-mcp-auth` once. Use the
 remote server if you want this to work from claude.ai on your phone too;
-the 24 official tools work there with no extra risk, and the unofficial
+the 23 official tools work there with no extra risk, and the unofficial
 read-only tools (training status/readiness, VO2 max, race predictions,
 personal records, devices, activity splits/laps/weather/gear,
 respiration) plus the 9 workout tools are available too, but opting into
@@ -149,7 +149,7 @@ pip install -e .
 Garmin emails you about a week before the key expires; when it does,
 repeat these steps with a new key.
 
-### 2. Unofficial fallback — only if you want those 20 tools (11 read-only + 9 workout)
+### 2. Unofficial fallback — only if you want those 21 tools (12 read-only + 9 workout)
 
 From a real terminal — **not** from inside Claude or Cursor, since you
 may need to type an MFA code:
@@ -234,7 +234,7 @@ when it does, generate a new one and update the
 5. Add the connector to whichever Projects should use it (e.g. your
    cycling coach Project) under that Project's connector settings.
 
-That's it — the 24 official-API tools are now reachable from claude.ai
+That's it — the 23 official-API tools are now reachable from claude.ai
 on web, desktop, and mobile.
 
 ### How the login works, briefly
@@ -250,7 +250,7 @@ out of sync.
 
 ### Unofficial fallback tools on the remote server (optional, higher risk)
 
-The 11 unofficial-fallback tools and the 9 workout tools (see the warning
+The 12 unofficial-fallback tools and the 9 workout tools (see the warning
 above) are *registered* on the remote server too, but return
 `{"error": ...}` until you log in to Garmin's unofficial API there —
 deliberately a separate, opt-in step from deploying the server itself,
@@ -310,7 +310,7 @@ hits a real API, Garmin or claude.ai. Two files:
   a wrong-password attempt), PKCE code exchange, that an authorization
   code can't be redeemed twice, refresh-token rotation invalidating the
   old access token, bearer-token enforcement on the MCP endpoint, Host-
-  header validation, that all 44 tools are registered (24 official + 11
+  header validation, that all 44 tools are registered (23 official + 12
   unofficial + 9 workout), and that the unofficial/workout ones report a
   clear "no session" error until `/admin/garmin-login` succeeds.
 
@@ -332,7 +332,7 @@ claude.ai.
   only ever resumes the cached session token. Not imported by the remote
   server at all.
 - `garmin_mcp/tools_official.py` / `tools_unofficial.py` /
-  `tools_workouts.py` — the 24, 11, and 9 tool implementations, as plain
+  `tools_workouts.py` — the 23, 12, and 9 tool implementations, as plain
   functions rather than tied to one server instance, so the local and
   remote servers can register the same tool code (`mcp.add_tool(fn)`)
   instead of maintaining two copies. `tools_unofficial.py` and
@@ -346,7 +346,7 @@ claude.ai.
   `garmin-mcp-auth`). Reachable only from the machine it runs on.
 - `garmin_mcp/remote_auth.py` / `remote_auth_unofficial.py` /
   `remote_server.py` — the remote, HTTP MCP server: always registers the
-  24 official tools; also registers the 11 unofficial and 9 workout
+  23 official tools; also registers the 12 unofficial and 9 workout
   tools, bound instead to `remote_auth_unofficial.get_client` (an
   in-memory session established at the owner-only `/admin/garmin-login`
   page, never a cached file or an env var holding your password) — plus
@@ -362,7 +362,7 @@ claude.ai.
   expired or was deleted on Garmin's side; create a new one and run
   `garmin-mcp-save-key` again.
 - **A tool returns `{"error": "No cached Garmin Connect session found..."}`**
-  — run `garmin-mcp-auth` (only needed for the 11 unofficial-fallback and
+  — run `garmin-mcp-auth` (only needed for the 12 unofficial-fallback and
   9 workout tools).
 - **`create_workout`/`create_simple_interval_workout` fails with a
   validation error** — the `{"error": "ValueError: ..."}` message says
@@ -394,7 +394,7 @@ claude.ai.
   restart/redeploy clears them; just reconnect the connector in
   claude.ai and log in again.
 - **A remote tool call fails but the same tool works locally** — the
-  remote server only has the official-API tools; if it's one of the 11
+  remote server only has the official-API tools; if it's one of the 12
   unofficial-fallback tools (see the table above), that's expected — use
   the local `garmin-mcp-server` for those.
 
