@@ -7,7 +7,7 @@ etc.) so claude.ai can reach it from your phone, not just from a Desktop
 app on one machine. To keep that safe, it is deliberately narrower than
 the local hybrid server in server.py:
 
-- The 23 tools backed by Garmin's official Personal API are always
+- The 24 tools backed by Garmin's official Personal API are always
   registered here (see tools_official.py) — no password, no MFA.
 - Access is gated by OAuth 2.0 with Dynamic Client Registration (see
   remote_auth.py): claude.ai registers itself automatically, but minting

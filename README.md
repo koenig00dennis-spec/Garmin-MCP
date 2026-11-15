@@ -22,12 +22,12 @@ want — if you never call an unofficial-API tool, you never need to run
 
 ## What this gives Claude
 
-**23 tools on the official Personal API** — no password, ever:
+**24 tools on the official Personal API** — no password, ever:
 
 | Area | Tools |
 |---|---|
 | **Activities & workouts** | `list_activities`, `get_activity`, `get_activity_workouts`, `get_wellness_activity_summaries` |
-| **Health & wellness** | `get_daily_summary`, `get_sleep`, `get_sleep_summaries`, `get_steps`, `get_heart_rate`, `get_heart_rate_zones`, `get_body_battery`, `get_stress`, `get_hrv`, `get_hrv_summaries`, `get_spo2`, `get_fitness_age`, `get_hydration`, `get_weight_measurements`, `get_weight_goals`, `get_food_logs`, `get_profile_settings` |
+| **Health & wellness** | `get_daily_summary`, `get_sleep`, `get_sleep_summaries`, `get_steps`, `get_heart_rate`, `get_heart_rate_zones`, `get_body_battery`, `get_stress`, `get_stress_details`, `get_hrv`, `get_hrv_summaries`, `get_spo2`, `get_fitness_age`, `get_hydration`, `get_weight_measurements`, `get_weight_goals`, `get_food_logs`, `get_profile_settings` |
 | **Women's health** | `get_menstrual_cycle_summary`, `get_menstrual_cycle_day_view` |
 
 **11 read-only tools on the unofficial fallback** — data Garmin's
@@ -98,7 +98,7 @@ they need it, instead of failing silently.
 | Transport | stdio | HTTP (Streamable HTTP) |
 | Where it runs | your own machine | anywhere public (Railway, etc.) |
 | Reachable from | Claude Desktop/Cursor on that machine only | claude.ai on **any device**, including your phone |
-| Tools | all 43 (23 official + 11 unofficial + 9 workout) | 23 official always; the 20 unofficial/workout tools are *registered* but only work once you opt in at `/admin/garmin-login` |
+| Tools | all 44 (24 official + 11 unofficial + 9 workout) | 24 official always; the 20 unofficial/workout tools are *registered* but only work once you opt in at `/admin/garmin-login` |
 | Your Garmin password | only touches `garmin-mcp-auth`, run by hand | **never** — typed into `/admin/garmin-login` directly, never into Claude or an env var |
 | Access control | whoever has your machine | OAuth2 + a password you set (`GARMIN_MCP_ACCESS_PASSWORD`) |
 
@@ -106,7 +106,7 @@ Use the local server if you only ever use Claude Desktop/Cursor on one
 machine and want every tool with the least setup — the unofficial and
 workout tools work as soon as you run `garmin-mcp-auth` once. Use the
 remote server if you want this to work from claude.ai on your phone too;
-the 23 official tools work there with no extra risk, and the unofficial
+the 24 official tools work there with no extra risk, and the unofficial
 read-only tools (training status/readiness, VO2 max, race predictions,
 personal records, devices, activity splits/laps/weather/gear,
 respiration) plus the 9 workout tools are available too, but opting into
@@ -234,7 +234,7 @@ when it does, generate a new one and update the
 5. Add the connector to whichever Projects should use it (e.g. your
    cycling coach Project) under that Project's connector settings.
 
-That's it — the 23 official-API tools are now reachable from claude.ai
+That's it — the 24 official-API tools are now reachable from claude.ai
 on web, desktop, and mobile.
 
 ### How the login works, briefly
@@ -296,7 +296,7 @@ hits a real API, Garmin or claude.ai. Two files:
   tool calls the right underlying method with the right arguments, that
   a missing key/session comes back as a normal `{"error": ...}` result
   instead of crashing the server, that an expired official-API access
-  token is transparently refreshed and retried once, and that all 43
+  token is transparently refreshed and retried once, and that all 44
   tools register with the official ones unlabeled and the unofficial/
   workout ones all starting with `(unofficial API)`.
 - `tests/test_tools_workouts.py` — the pure workout-JSON builder behind
@@ -310,7 +310,7 @@ hits a real API, Garmin or claude.ai. Two files:
   a wrong-password attempt), PKCE code exchange, that an authorization
   code can't be redeemed twice, refresh-token rotation invalidating the
   old access token, bearer-token enforcement on the MCP endpoint, Host-
-  header validation, that all 43 tools are registered (23 official + 11
+  header validation, that all 44 tools are registered (24 official + 11
   unofficial + 9 workout), and that the unofficial/workout ones report a
   clear "no session" error until `/admin/garmin-login` succeeds.
 
@@ -332,7 +332,7 @@ claude.ai.
   only ever resumes the cached session token. Not imported by the remote
   server at all.
 - `garmin_mcp/tools_official.py` / `tools_unofficial.py` /
-  `tools_workouts.py` — the 23, 11, and 9 tool implementations, as plain
+  `tools_workouts.py` — the 24, 11, and 9 tool implementations, as plain
   functions rather than tied to one server instance, so the local and
   remote servers can register the same tool code (`mcp.add_tool(fn)`)
   instead of maintaining two copies. `tools_unofficial.py` and
@@ -340,13 +340,13 @@ claude.ai.
   so the same functions can be bound to either session source below;
   `tools_workouts.py` is kept separate from `tools_unofficial.py`
   because it writes to the account instead of just reading it.
-- `garmin_mcp/server.py` — the local, stdio MCP server: registers all 43
+- `garmin_mcp/server.py` — the local, stdio MCP server: registers all 44
   tools from the three modules above, the unofficial/workout ones bound
   to `auth_unofficial.get_client` (the file-cached session from
   `garmin-mcp-auth`). Reachable only from the machine it runs on.
 - `garmin_mcp/remote_auth.py` / `remote_auth_unofficial.py` /
   `remote_server.py` — the remote, HTTP MCP server: always registers the
-  23 official tools; also registers the 11 unofficial and 9 workout
+  24 official tools; also registers the 11 unofficial and 9 workout
   tools, bound instead to `remote_auth_unofficial.get_client` (an
   in-memory session established at the owner-only `/admin/garmin-login`
   page, never a cached file or an env var holding your password) — plus

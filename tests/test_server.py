@@ -419,4 +419,17 @@ async def test_workout_docstrings_are_labeled():
 async def test_all_tools_are_registered():
     tools = await server.mcp.list_tools()
     # 23 official + 11 unofficial-fallback (read-only) + 9 workout tools.
-    assert len(tools) == 43
+    assert len(tools) == 44
+
+
+@pytest.mark.asyncio
+async def test_get_stress_details_calls_intraday_endpoint(fake_official):
+    result = await _call("get_stress_details", day="2026-11-15")
+    assert fake_official.calls == [("get", ("/wellness-service/wellness/dailyStress/2026-11-15",), {})]
+    assert result["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_stress_details_defaults_to_today(fake_official):
+    await _call("get_stress_details")
+    assert fake_official.calls[0][1] == (f"/wellness-service/wellness/dailyStress/{date.today().isoformat()}",)

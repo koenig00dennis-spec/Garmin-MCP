@@ -3,7 +3,7 @@
 These are plain, undecorated async functions — not tied to any one
 ``MCPServer`` instance — so both the local hybrid server (``server.py``,
 stdio, all 34 tools) and the remote server (``remote_server.py``, HTTP,
-official-only) can register the exact same 23 functions via
+official-only) can register the exact same 24 functions via
 ``mcp.add_tool(fn)`` instead of maintaining two copies.
 
 Dates are ISO strings, "YYYY-MM-DD"; omitting one defaults to today.
@@ -191,6 +191,20 @@ async def get_stress(start_date: str | None = None, end_date: str | None = None)
     return await _call_official(lambda c: c.get_daily_stress(start_date, end_date or start_date))
 
 
+async def get_stress_details(day: str | None = None) -> Any:
+    """Get intraday stress readings for one day (about every 3 minutes).
+
+    Unlike get_stress (daily totals only), this returns the stress
+    timeline Garmin Connect uses for its day chart: ``stressValuesArray``
+    holds [timestamp_ms_utc, value] pairs, value 0-100; -1 means not
+    enough data (e.g. moving), -2 means activity. Read-only.
+
+    Args:
+        day: ISO date "YYYY-MM-DD". Defaults to today.
+    """
+    return await _call_official(lambda c: c.get(f"/wellness-service/wellness/dailyStress/{day or _today()}"))
+
+
 async def get_hrv(day: str | None = None) -> Any:
     """Get heart rate variability (HRV) data for one night.
 
@@ -298,7 +312,7 @@ async def get_menstrual_cycle_day_view(day: str | None = None) -> Any:
     return await _call_official(lambda c: c.get_menstrual_cycle_day_view(day or today, today))
 
 
-# All 23 official-API tools, in a stable order. Both server.py (local,
+# All 24 official-API tools, in a stable order. Both server.py (local,
 # hybrid) and remote_server.py (remote, official-only) register tools by
 # iterating this list — add a new official tool here once and it shows up
 # in both places.
@@ -315,6 +329,7 @@ OFFICIAL_TOOLS: list[Callable[..., Any]] = [
     get_heart_rate_zones,
     get_body_battery,
     get_stress,
+    get_stress_details,
     get_hrv,
     get_hrv_summaries,
     get_spo2,

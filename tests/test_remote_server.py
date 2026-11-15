@@ -197,7 +197,7 @@ async def test_remote_server_registers_official_and_unofficial_tools(app):
     # are always *registered* on the remote server now, they just error
     # out until the owner logs in at /admin/garmin-login (see the tests
     # below).
-    assert len(names) == 43
+    assert len(names) == 44
     assert "get_training_status" in names
     assert "get_max_metrics" in names
     assert "list_devices" in names
